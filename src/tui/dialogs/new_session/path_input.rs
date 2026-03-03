@@ -4,6 +4,7 @@ use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
 
 use super::{NewSessionDialog, PATH_FIELD};
+use crate::tui::components::longest_common_prefix;
 
 pub(super) struct PathGhostCompletion {
     input_snapshot: String,
@@ -19,25 +20,6 @@ fn char_to_byte_idx(value: &str, char_idx: usize) -> usize {
         .nth(char_idx)
         .map(|(idx, _)| idx)
         .unwrap_or(value.len())
-}
-
-fn longest_common_prefix(values: &[String]) -> String {
-    if values.is_empty() {
-        return String::new();
-    }
-
-    let mut prefix = values[0].clone();
-    for value in &values[1..] {
-        while !value.starts_with(&prefix) {
-            if prefix.pop().is_none() {
-                break;
-            }
-        }
-        if prefix.is_empty() {
-            break;
-        }
-    }
-    prefix
 }
 
 fn path_completion_base(parent_prefix: &str) -> Option<PathBuf> {

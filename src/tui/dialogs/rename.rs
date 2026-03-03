@@ -7,7 +7,10 @@ use tui_input::backend::crossterm::EventHandler;
 use tui_input::Input;
 
 use super::DialogResult;
-use crate::tui::components::{render_text_field, ListPicker, ListPickerResult};
+use crate::tui::components::longest_common_prefix;
+use crate::tui::components::{
+    render_text_field, render_text_field_with_ghost, ListPicker, ListPickerResult,
+};
 use crate::tui::styles::Theme;
 
 /// Data returned when the rename dialog is submitted
@@ -21,6 +24,12 @@ pub struct RenameData {
     pub profile: Option<String>,
 }
 
+struct GroupGhostCompletion {
+    input_snapshot: String,
+    cursor_snapshot: usize,
+    ghost_text: String,
+}
+
 pub struct RenameDialog {
     current_title: String,
     current_group: String,
@@ -32,6 +41,7 @@ pub struct RenameDialog {
     focused_field: usize, // 0 = title, 1 = group, 2 = profile
     existing_groups: Vec<String>,
     group_picker: ListPicker,
+    group_ghost: Option<GroupGhostCompletion>,
 }
 
 impl RenameDialog {
@@ -58,6 +68,7 @@ impl RenameDialog {
             focused_field: 0,
             existing_groups,
             group_picker: ListPicker::new("Select Group"),
+            group_ghost: None,
         }
     }
 
@@ -81,6 +92,83 @@ impl RenameDialog {
         };
     }
 
+    fn recompute_group_ghost(&mut self) {
+        self.group_ghost = None;
+
+        if self.existing_groups.is_empty() {
+            return;
+        }
+
+        let value = self.new_group.value().to_string();
+        if value.is_empty() {
+            return;
+        }
+
+        let char_len = value.chars().count();
+        let cursor_char = self.new_group.visual_cursor().min(char_len);
+
+        if cursor_char < char_len {
+            return;
+        }
+
+        let mut matches: Vec<String> = self
+            .existing_groups
+            .iter()
+            .filter(|g| g.starts_with(&value))
+            .cloned()
+            .collect();
+
+        if matches.is_empty() {
+            return;
+        }
+        matches.sort();
+
+        let ghost_text = if matches.len() == 1 {
+            matches[0][value.len()..].to_string()
+        } else {
+            let common = longest_common_prefix(&matches);
+            if common.len() > value.len() {
+                common[value.len()..].to_string()
+            } else {
+                matches[0][value.len()..].to_string()
+            }
+        };
+
+        if ghost_text.is_empty() {
+            return;
+        }
+
+        self.group_ghost = Some(GroupGhostCompletion {
+            input_snapshot: value,
+            cursor_snapshot: cursor_char,
+            ghost_text,
+        });
+    }
+
+    fn accept_group_ghost(&mut self) -> bool {
+        let ghost = match self.group_ghost.take() {
+            Some(g) => g,
+            None => return false,
+        };
+
+        let value = self.new_group.value().to_string();
+        let cursor_char = self.new_group.visual_cursor().min(value.chars().count());
+
+        if ghost.input_snapshot != value || ghost.cursor_snapshot != cursor_char {
+            return false;
+        }
+
+        let mut new_value = value;
+        new_value.push_str(&ghost.ghost_text);
+        self.new_group = Input::new(new_value);
+        self.recompute_group_ghost();
+        true
+    }
+
+    fn group_ghost_text(&self) -> Option<&str> {
+        self.group_ghost.as_ref().map(|g| g.ghost_text.as_str())
+    }
+
     fn selected_profile(&self) -> &str {
         &self.available_profiles[self.profile_index]
     }
@@ -90,6 +178,7 @@ impl RenameDialog {
         if self.group_picker.is_active() {
             if let ListPickerResult::Selected(value) = self.group_picker.handle_key(key) {
                 self.new_group = Input::new(value);
+                self.group_ghost = None;
             }
             return DialogResult::Continue;
         }
@@ -102,6 +191,20 @@ impl RenameDialog {
         {
             self.group_picker.activate(self.existing_groups.clone());
             return DialogResult::Continue;
+        }
+
+        // Right/End arrow at end of group input with ghost: accept ghost text
+        if self.focused_field == 1
+            && matches!(key.code, KeyCode::Right | KeyCode::End)
+            && key.modifiers == KeyModifiers::NONE
+            && self.group_ghost.is_some()
+        {
+            let cursor = self.new_group.visual_cursor();
+            let char_len = self.new_group.value().chars().count();
+            if cursor >= char_len {
+                self.accept_group_ghost();
+                return DialogResult::Continue;
+            }
         }
 
         match key.code {
@@ -148,14 +251,29 @@ impl RenameDialog {
                 } else {
                     self.next_field();
                 }
+                if self.focused_field == 1 {
+                    self.recompute_group_ghost();
+                } else {
+                    self.group_ghost = None;
+                }
                 DialogResult::Continue
             }
             KeyCode::Down => {
                 self.next_field();
+                if self.focused_field == 1 {
+                    self.recompute_group_ghost();
+                } else {
+                    self.group_ghost = None;
+                }
                 DialogResult::Continue
             }
             KeyCode::Up => {
                 self.prev_field();
+                if self.focused_field == 1 {
+                    self.recompute_group_ghost();
+                } else {
+                    self.group_ghost = None;
+                }
                 DialogResult::Continue
             }
             KeyCode::Left if self.focused_field == 2 => {
@@ -175,6 +293,9 @@ impl RenameDialog {
             _ => {
                 if let Some(input) = self.focused_input() {
                     input.handle_event(&crossterm::event::Event::Key(key));
+                }
+                if self.focused_field == 1 {
+                    self.recompute_group_ghost();
                 }
                 DialogResult::Continue
             }
@@ -255,13 +376,14 @@ impl RenameDialog {
         } else {
             None
         };
-        render_text_field(
+        render_text_field_with_ghost(
             frame,
             chunks[5],
             "New group:",
             &self.new_group,
             self.focused_field == 1,
             group_hint,
+            self.group_ghost_text(),
             theme,
         );
 
@@ -295,6 +417,10 @@ impl RenameDialog {
             Span::raw(" switch  "),
         ];
         if self.focused_field == 1 && !self.existing_groups.is_empty() {
+            if self.group_ghost_text().is_some() {
+                hint_spans.push(Span::styled("→", Style::default().fg(theme.hint)));
+                hint_spans.push(Span::raw(" accept  "));
+            }
             hint_spans.push(Span::styled("C-p", Style::default().fg(theme.hint)));
             hint_spans.push(Span::raw(" groups  "));
         }

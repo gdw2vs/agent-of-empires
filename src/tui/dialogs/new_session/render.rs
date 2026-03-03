@@ -4,7 +4,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::*;
 
 use super::{NewSessionDialog, FIELD_HELP, HELP_DIALOG_WIDTH, PATH_FIELD, SPINNER_FRAMES};
-use crate::tui::components::render_text_field;
+use crate::tui::components::{render_text_field, render_text_field_with_ghost};
 use crate::tui::styles::Theme;
 
 impl NewSessionDialog {
@@ -348,13 +348,14 @@ impl NewSessionDialog {
             } else {
                 None
             };
-        render_text_field(
+        render_text_field_with_ghost(
             frame,
             chunks[ci],
             "Group:",
             &self.group,
             self.focused_field == group_field,
             group_placeholder,
+            self.group_ghost_text(),
             theme,
         );
         ci += 1;
@@ -388,6 +389,10 @@ impl NewSessionDialog {
                 hint_spans.push(Span::raw(" browse  "));
             }
             if self.focused_field == group_field && !self.existing_groups.is_empty() {
+                if self.group_ghost_text().is_some() {
+                    hint_spans.push(Span::styled("→", Style::default().fg(theme.hint)));
+                    hint_spans.push(Span::raw(" accept  "));
+                }
                 hint_spans.push(Span::styled("C-p", Style::default().fg(theme.hint)));
                 hint_spans.push(Span::raw(" groups  "));
             }

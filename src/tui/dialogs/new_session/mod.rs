@@ -1,5 +1,6 @@
 //! New session dialog
 
+mod group_input;
 mod path_input;
 mod render;
 
@@ -20,6 +21,7 @@ use crate::session::Config;
 use crate::session::{civilizations, resolve_config};
 use crate::tmux::AvailableTools;
 use crate::tui::components::{DirPicker, DirPickerResult, ListPicker, ListPickerResult};
+use group_input::GroupGhostCompletion;
 use path_input::PathGhostCompletion;
 
 pub(super) struct FieldHelp {
@@ -161,6 +163,8 @@ pub struct NewSessionDialog {
     pub(super) path_invalid_flash_until: Option<Instant>,
     /// Ghost text completion for the path field (fish-shell style).
     path_ghost: Option<PathGhostCompletion>,
+    /// Ghost text completion for the group field (fish-shell style).
+    group_ghost: Option<GroupGhostCompletion>,
 }
 
 /// Shared logic for handling key events in an editable list (env keys or env values).
@@ -363,6 +367,7 @@ impl NewSessionDialog {
             hook_output: Vec::new(),
             path_invalid_flash_until: None,
             path_ghost: None,
+            group_ghost: None,
         }
     }
 
@@ -476,6 +481,7 @@ impl NewSessionDialog {
             hook_output: Vec::new(),
             path_invalid_flash_until: None,
             path_ghost: None,
+            group_ghost: None,
         }
     }
 
@@ -524,6 +530,7 @@ impl NewSessionDialog {
             hook_output: Vec::new(),
             path_invalid_flash_until: None,
             path_ghost: None,
+            group_ghost: None,
         }
     }
 
@@ -551,6 +558,7 @@ impl NewSessionDialog {
         if self.group_picker.is_active() {
             if let ListPickerResult::Selected(value) = self.group_picker.handle_key(key) {
                 self.group = Input::new(value);
+                self.clear_group_ghost();
             }
             return DialogResult::Continue;
         }
@@ -668,6 +676,10 @@ impl NewSessionDialog {
             return DialogResult::Continue;
         }
 
+        if self.handle_group_shortcuts(key, group_field) {
+            return DialogResult::Continue;
+        }
+
         match key.code {
             KeyCode::Char('?') => {
                 self.show_help = true;
@@ -728,15 +740,24 @@ impl NewSessionDialog {
                 if self.focused_field == PATH_FIELD {
                     self.clear_path_ghost();
                 }
+                if self.focused_field == group_field {
+                    self.clear_group_ghost();
+                }
                 self.focused_field = (self.focused_field + 1) % max_field;
                 if self.focused_field == PATH_FIELD {
                     self.recompute_path_ghost();
+                }
+                if self.focused_field == group_field {
+                    self.recompute_group_ghost();
                 }
                 DialogResult::Continue
             }
             KeyCode::BackTab | KeyCode::Up => {
                 if self.focused_field == PATH_FIELD {
                     self.clear_path_ghost();
+                }
+                if self.focused_field == group_field {
+                    self.clear_group_ghost();
                 }
                 self.focused_field = if self.focused_field == 0 {
                     max_field - 1
@@ -745,6 +766,9 @@ impl NewSessionDialog {
                 };
                 if self.focused_field == PATH_FIELD {
                     self.recompute_path_ghost();
+                }
+                if self.focused_field == group_field {
+                    self.recompute_group_ghost();
                 }
                 DialogResult::Continue
             }
@@ -820,6 +844,9 @@ impl NewSessionDialog {
                     if self.focused_field == PATH_FIELD {
                         self.path_invalid_flash_until = None;
                         self.recompute_path_ghost();
+                    }
+                    if self.focused_field == group_field {
+                        self.recompute_group_ghost();
                     }
                 }
                 DialogResult::Continue
