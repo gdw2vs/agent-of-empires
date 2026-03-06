@@ -624,16 +624,16 @@ impl Instance {
             self.has_custom_command(),
             detected
         );
-        let shell_pane_is_stale = !self.expects_shell() && session.is_pane_running_shell();
+        let is_shell_stale = || !self.expects_shell() && session.is_pane_running_shell();
         self.status = match detected {
             Status::Idle if self.has_custom_command() => {
-                if session.is_pane_dead() || shell_pane_is_stale {
+                if session.is_pane_dead() || is_shell_stale() {
                     Status::Error
                 } else {
                     Status::Unknown
                 }
             }
-            Status::Idle if session.is_pane_dead() || shell_pane_is_stale => Status::Error,
+            Status::Idle if session.is_pane_dead() || is_shell_stale() => Status::Error,
             other => other,
         };
 
