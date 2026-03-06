@@ -70,7 +70,7 @@ const KNOWN_SHELLS: &[&str] = &[
     "bash", "zsh", "sh", "fish", "dash", "ksh", "tcsh", "csh", "nu", "pwsh",
 ];
 
-fn is_shell_command(cmd: &str) -> bool {
+pub(crate) fn is_shell_command(cmd: &str) -> bool {
     let normalized = cmd.strip_prefix('-').unwrap_or(cmd);
     KNOWN_SHELLS.contains(&normalized)
 }

@@ -467,6 +467,7 @@ mod tests {
                 "80",
                 "-y",
                 "24",
+                "sh",
             ])
             .output()
             .expect("tmux new-session");
@@ -476,7 +477,7 @@ mod tests {
 
         assert!(
             is_pane_running_shell(&session_name),
-            "Session running a bare shell should be detected"
+            "Session running sh should be detected as a shell"
         );
 
         let _ = Command::new("tmux")

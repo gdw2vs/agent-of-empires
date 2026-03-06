@@ -385,7 +385,7 @@ impl App {
 
         if !tmux_session.exists()
             || tmux_session.is_pane_dead()
-            || tmux_session.is_pane_running_shell()
+            || (!instance.expects_shell() && tmux_session.is_pane_running_shell())
         {
             if tmux_session.exists() {
                 let _ = tmux_session.kill();
