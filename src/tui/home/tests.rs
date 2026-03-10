@@ -777,7 +777,10 @@ fn test_uppercase_p_picker_switch_profile() {
     view.handle_key(key(KeyCode::Down));
     view.handle_key(key(KeyCode::Down));
     let action = view.handle_key(key(KeyCode::Enter));
-    assert_eq!(action, Some(Action::SwitchProfile("second".to_string())));
+    assert_eq!(
+        action,
+        Some(Action::SwitchProfile(Some("second".to_string())))
+    );
 }
 
 #[test]

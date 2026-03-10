@@ -324,12 +324,19 @@ impl HomeView {
                 DialogResult::Submit(action) => match action {
                     ProfilePickerAction::Switch(name) => {
                         self.profile_picker_dialog = None;
-                        return Some(Action::SwitchProfile(name));
+                        // The synthetic "all" entry (only present in filtered mode)
+                        // switches back to all-profiles mode
+                        let profile = if self.active_profile.is_some() && name == "all" {
+                            None
+                        } else {
+                            Some(name)
+                        };
+                        return Some(Action::SwitchProfile(profile));
                     }
                     ProfilePickerAction::Created(name) => {
                         self.profile_picker_dialog = None;
                         match crate::session::create_profile(&name) {
-                            Ok(()) => return Some(Action::SwitchProfile(name)),
+                            Ok(()) => return Some(Action::SwitchProfile(Some(name))),
                             Err(e) => {
                                 self.info_dialog = Some(InfoDialog::new(
                                     "Error",

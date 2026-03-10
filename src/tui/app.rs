@@ -77,7 +77,7 @@ pub fn check_version_change() -> Result<Option<String>> {
 
 impl App {
     pub fn new(profile: &str, available_tools: AvailableTools) -> Result<Self> {
-        let active_profile = if profile.is_empty() || profile == "default" {
+        let active_profile = if profile.is_empty() {
             None // all-profiles mode
         } else {
             Some(profile.to_string())
@@ -338,12 +338,7 @@ impl App {
             Action::AttachTerminal(id, mode) => {
                 self.attach_terminal(&id, mode, terminal)?;
             }
-            Action::SwitchProfile(profile) => {
-                let active_profile = if profile == "all" {
-                    None
-                } else {
-                    Some(profile)
-                };
+            Action::SwitchProfile(active_profile) => {
                 let tools = self.home.available_tools();
                 self.home = HomeView::new(active_profile, tools)?;
             }
@@ -600,7 +595,7 @@ pub enum Action {
     Quit,
     AttachSession(String),
     AttachTerminal(String, TerminalMode),
-    SwitchProfile(String),
+    SwitchProfile(Option<String>),
     EditFile(PathBuf),
     StopSession(String),
     SetTheme(String),
