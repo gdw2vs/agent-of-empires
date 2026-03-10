@@ -199,6 +199,11 @@ pub enum Item {
         id: String,
         depth: usize,
     },
+    ProfileHeader {
+        name: String,
+        collapsed: bool,
+        session_count: usize,
+    },
 }
 
 impl Item {
@@ -206,6 +211,7 @@ impl Item {
         match self {
             Item::Group { depth, .. } => *depth,
             Item::Session { depth, .. } => *depth,
+            Item::ProfileHeader { .. } => 0,
         }
     }
 }

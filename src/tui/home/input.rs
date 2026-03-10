@@ -653,9 +653,18 @@ impl HomeView {
                             Some(Action::AttachTerminal(id.clone(), terminal_mode))
                         }
                     };
-                } else if let Some(Item::Group { path, .. }) = self.flat_items.get(self.cursor) {
-                    let path = path.clone();
-                    self.toggle_group_collapsed(&path);
+                } else if let Some(item) = self.flat_items.get(self.cursor) {
+                    match item {
+                        Item::Group { path, .. } => {
+                            let path = path.clone();
+                            self.toggle_group_collapsed(&path);
+                        }
+                        Item::ProfileHeader { name, .. } => {
+                            let name = name.clone();
+                            self.toggle_profile_collapsed(&name);
+                        }
+                        _ => {}
+                    }
                 }
             }
             KeyCode::Char('H') => {
@@ -665,24 +674,40 @@ impl HomeView {
                 self.grow_list();
             }
             KeyCode::Left | KeyCode::Char('h') => {
-                if let Some(Item::Group {
-                    path, collapsed, ..
-                }) = self.flat_items.get(self.cursor)
-                {
-                    if !collapsed {
-                        let path = path.clone();
-                        self.toggle_group_collapsed(&path);
+                if let Some(item) = self.flat_items.get(self.cursor) {
+                    match item {
+                        Item::Group {
+                            path, collapsed, ..
+                        } if !collapsed => {
+                            let path = path.clone();
+                            self.toggle_group_collapsed(&path);
+                        }
+                        Item::ProfileHeader {
+                            name, collapsed, ..
+                        } if !collapsed => {
+                            let name = name.clone();
+                            self.toggle_profile_collapsed(&name);
+                        }
+                        _ => {}
                     }
                 }
             }
             KeyCode::Right | KeyCode::Char('l') => {
-                if let Some(Item::Group {
-                    path, collapsed, ..
-                }) = self.flat_items.get(self.cursor)
-                {
-                    if *collapsed {
-                        let path = path.clone();
-                        self.toggle_group_collapsed(&path);
+                if let Some(item) = self.flat_items.get(self.cursor) {
+                    match item {
+                        Item::Group {
+                            path, collapsed, ..
+                        } if *collapsed => {
+                            let path = path.clone();
+                            self.toggle_group_collapsed(&path);
+                        }
+                        Item::ProfileHeader {
+                            name, collapsed, ..
+                        } if *collapsed => {
+                            let name = name.clone();
+                            self.toggle_profile_collapsed(&name);
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -718,6 +743,10 @@ impl HomeView {
                     self.selected_session = None;
                     self.selected_group = Some(path.clone());
                 }
+                Item::ProfileHeader { name, .. } => {
+                    self.selected_session = None;
+                    self.selected_group = Some(name.clone());
+                }
             }
         }
     }
@@ -745,6 +774,10 @@ impl HomeView {
         if let Err(e) = self.save() {
             tracing::error!("Failed to save group state: {}", e);
         }
+    }
+
+    fn toggle_profile_collapsed(&mut self, _name: &str) {
+        // Will be implemented in Task 6 with collapsed_profiles HashSet
     }
 
     /// Re-score matches after a reload without moving the cursor.
@@ -783,6 +816,7 @@ impl HomeView {
                 Item::Group { name, path, .. } => {
                     format!("{} {}", name, path)
                 }
+                Item::ProfileHeader { name, .. } => name.clone(),
             };
 
             let haystack_utf32 = Utf32Str::new(&haystack, &mut buf);
@@ -837,6 +871,7 @@ impl HomeView {
                 Item::Group { name, path, .. } => {
                     format!("{} {}", name, path)
                 }
+                Item::ProfileHeader { name, .. } => name.clone(),
             };
 
             let haystack_utf32 = Utf32Str::new(&haystack, &mut buf);

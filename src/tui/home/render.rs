@@ -240,6 +240,21 @@ impl HomeView {
                 let style = Style::default().fg(theme.group).bold();
                 (icon, text, style)
             }
+            Item::ProfileHeader {
+                name,
+                collapsed,
+                session_count,
+                ..
+            } => {
+                let icon = if *collapsed {
+                    ICON_COLLAPSED
+                } else {
+                    ICON_EXPANDED
+                };
+                let text = Cow::Owned(format!("{} ({})", name, session_count));
+                let style = Style::default().fg(theme.group).bold().underlined();
+                (icon, text, style)
+            }
             Item::Session { id, .. } => {
                 if let Some(inst) = self.get_instance(id) {
                     match self.view_mode {
@@ -580,6 +595,12 @@ impl HomeView {
                 collapsed: true, ..
             }) => Some(" Expand "),
             Some(Item::Group {
+                collapsed: false, ..
+            }) => Some(" Collapse "),
+            Some(Item::ProfileHeader {
+                collapsed: true, ..
+            }) => Some(" Expand "),
+            Some(Item::ProfileHeader {
                 collapsed: false, ..
             }) => Some(" Collapse "),
             Some(Item::Session { .. }) => Some(" Attach "),

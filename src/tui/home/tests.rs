@@ -1454,7 +1454,7 @@ fn test_o_key_flat_items_sorted_az() {
     let mut in_work_group = false;
     for item in &env.view.flat_items {
         match item {
-            Item::Group { name, .. } => {
+            Item::Group { name, .. } | Item::ProfileHeader { name, .. } => {
                 in_work_group = name == "work";
             }
             Item::Session { id, .. } => {
@@ -1487,7 +1487,7 @@ fn test_o_key_flat_items_sorted_za() {
     let mut in_work_group = false;
     for item in &env.view.flat_items {
         match item {
-            Item::Group { name, .. } => {
+            Item::Group { name, .. } | Item::ProfileHeader { name, .. } => {
                 in_work_group = name == "work";
             }
             Item::Session { id, .. } => {
@@ -1521,7 +1521,7 @@ fn test_o_key_flat_items_newest_preserves_insertion_order() {
     let mut in_work_group = false;
     for item in &env.view.flat_items {
         match item {
-            Item::Group { name, .. } => {
+            Item::Group { name, .. } | Item::ProfileHeader { name, .. } => {
                 in_work_group = name == "work";
             }
             Item::Session { id, .. } => {
