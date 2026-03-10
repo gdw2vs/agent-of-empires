@@ -93,7 +93,8 @@ pub(super) const ICON_COLLAPSED: &str = "▶";
 pub(super) const ICON_EXPANDED: &str = "▼";
 
 pub struct HomeView {
-    pub(super) storage: Storage,
+    pub(super) storages: HashMap<String, Storage>,
+    pub(super) active_profile: Option<String>,
     pub(super) instances: Vec<Instance>,
     pub(super) instance_map: HashMap<String, Instance>,
     pub(super) groups: Vec<Group>,
@@ -175,17 +176,41 @@ pub struct HomeView {
 }
 
 impl HomeView {
-    pub fn new(storage: Storage, available_tools: AvailableTools) -> anyhow::Result<Self> {
-        let (instances, groups) = storage.load_with_groups()?;
+    pub fn new(
+        active_profile: Option<String>,
+        available_tools: AvailableTools,
+    ) -> anyhow::Result<Self> {
+        use crate::session::list_profiles;
 
-        let instance_map: HashMap<String, Instance> = instances
+        let mut storages = HashMap::new();
+        let mut all_instances = Vec::new();
+        let mut all_groups = Vec::new();
+
+        let profile_names = match &active_profile {
+            Some(name) => vec![name.clone()],
+            None => list_profiles()?.into_iter().collect(),
+        };
+
+        for profile_name in &profile_names {
+            let storage = Storage::new(profile_name)?;
+            let (mut instances, groups) = storage.load_with_groups()?;
+            for inst in &mut instances {
+                inst.source_profile = profile_name.clone();
+            }
+            all_instances.extend(instances);
+            all_groups.extend(groups);
+            storages.insert(profile_name.clone(), storage);
+        }
+
+        let instance_map: HashMap<String, Instance> = all_instances
             .iter()
             .map(|i| (i.id.clone(), i.clone()))
             .collect();
-        let group_tree = GroupTree::new_with_groups(&instances, &groups);
+        let group_tree = GroupTree::new_with_groups(&all_instances, &all_groups);
 
-        // Load the resolved config to get the default terminal mode, sound config, and sort order
-        let resolved = resolve_config(storage.profile());
+        // Use first profile for config resolution, or "default"
+        let config_profile = active_profile.as_deref().unwrap_or("default");
+        let resolved = resolve_config(config_profile);
         let default_terminal_mode = resolved
             .as_ref()
             .map(|config| match config.sandbox.default_terminal_mode {
@@ -203,13 +228,14 @@ impl HomeView {
             .and_then(|c| c.app_state.sort_order)
             .unwrap_or_default();
 
-        let flat_items = flatten_tree(&group_tree, &instances, sort_order);
+        let flat_items = flatten_tree(&group_tree, &all_instances, sort_order);
 
         let mut view = Self {
-            storage,
-            instances,
+            storages,
+            active_profile,
+            instances: all_instances,
             instance_map,
-            groups,
+            groups: all_groups,
             group_tree,
             flat_items,
             cursor: 0,
@@ -261,24 +287,44 @@ impl HomeView {
     }
 
     pub fn reload(&mut self) -> anyhow::Result<()> {
-        let (mut instances, groups) = self.storage.load_with_groups()?;
+        use crate::session::list_profiles;
 
-        for inst in &mut instances {
-            if let Some(prev) = self.instance_map.get(&inst.id) {
-                inst.status = prev.status;
-                inst.last_error = prev.last_error.clone();
-                inst.last_error_check = prev.last_error_check;
-                inst.last_start_time = prev.last_start_time;
+        let mut all_instances = Vec::new();
+        let mut all_groups = Vec::new();
+
+        // Re-discover profiles in "all" mode
+        if self.active_profile.is_none() {
+            let current_profiles = list_profiles()?;
+            for name in &current_profiles {
+                if !self.storages.contains_key(name) {
+                    self.storages.insert(name.clone(), Storage::new(name)?);
+                }
             }
+            self.storages.retain(|k, _| current_profiles.contains(k));
         }
 
-        self.instances = instances;
+        for (profile_name, storage) in &self.storages {
+            let (mut instances, groups) = storage.load_with_groups()?;
+            for inst in &mut instances {
+                inst.source_profile = profile_name.clone();
+                if let Some(prev) = self.instance_map.get(&inst.id) {
+                    inst.status = prev.status;
+                    inst.last_error = prev.last_error.clone();
+                    inst.last_error_check = prev.last_error_check;
+                    inst.last_start_time = prev.last_start_time;
+                }
+            }
+            all_instances.extend(instances);
+            all_groups.extend(groups);
+        }
+
+        self.instances = all_instances;
         self.instance_map = self
             .instances
             .iter()
             .map(|i| (i.id.clone(), i.clone()))
             .collect();
-        self.groups = groups;
+        self.groups = all_groups;
         self.group_tree = GroupTree::new_with_groups(&self.instances, &self.groups);
         self.flat_items = flatten_tree(&self.group_tree, &self.instances, self.sort_order);
 
@@ -433,50 +479,29 @@ impl HomeView {
                 on_launch_hooks_ran,
                 ..
             } => {
-                let instance = *instance;
+                let mut instance = *instance;
+                let target_profile = self.creation_poller.last_profile().unwrap_or_else(|| {
+                    self.active_profile
+                        .clone()
+                        .unwrap_or_else(|| "default".to_string())
+                });
+                instance.source_profile = target_profile.clone();
 
-                // Check if this was created for a different profile
-                let target_profile = self
-                    .creation_poller
-                    .last_profile()
-                    .unwrap_or_else(|| self.storage.profile().to_string());
-                let is_cross_profile = target_profile != self.storage.profile();
+                // Ensure target profile storage exists
+                if !self.storages.contains_key(&target_profile) {
+                    if let Ok(s) = Storage::new(&target_profile) {
+                        self.storages.insert(target_profile.clone(), s);
+                    }
+                }
 
-                if is_cross_profile {
-                    // Save to target profile's storage
-                    match Storage::new(&target_profile) {
-                        Ok(target_storage) => match target_storage.load_with_groups() {
-                            Ok((mut target_instances, target_groups)) => {
-                                target_instances.push(instance.clone());
-                                let mut target_tree =
-                                    GroupTree::new_with_groups(&target_instances, &target_groups);
-                                if !instance.group_path.is_empty() {
-                                    target_tree.create_group(&instance.group_path);
-                                }
-                                if let Err(e) =
-                                    target_storage.save_with_groups(&target_instances, &target_tree)
-                                {
-                                    tracing::error!("Failed to save to target profile: {}", e);
-                                }
-                            }
-                            Err(e) => {
-                                tracing::error!("Failed to load target profile data: {}", e);
-                            }
-                        },
-                        Err(e) => {
-                            tracing::error!("Failed to open target profile storage: {}", e);
-                        }
-                    }
-                } else {
-                    self.instances.push(instance.clone());
-                    self.group_tree = GroupTree::new_with_groups(&self.instances, &self.groups);
-                    if !instance.group_path.is_empty() {
-                        self.group_tree.create_group(&instance.group_path);
-                    }
+                self.instances.push(instance.clone());
+                self.group_tree = GroupTree::new_with_groups(&self.instances, &self.groups);
+                if !instance.group_path.is_empty() {
+                    self.group_tree.create_group(&instance.group_path);
+                }
 
-                    if let Err(e) = self.save() {
-                        tracing::error!("Failed to save after creation: {}", e);
-                    }
+                if let Err(e) = self.save() {
+                    tracing::error!("Failed to save after creation: {}", e);
                 }
 
                 if on_launch_hooks_ran {
@@ -579,14 +604,21 @@ impl HomeView {
         self.available_tools.clone()
     }
 
+    pub fn active_profile_display(&self) -> &str {
+        self.active_profile.as_deref().unwrap_or("all")
+    }
+
     /// Show the profile picker dialog with fresh data from disk.
     pub(super) fn show_profile_picker(&mut self) {
         use crate::session::list_profiles;
         use crate::tui::dialogs::{ProfileEntry, ProfilePickerDialog};
 
-        let current_profile = self.storage.profile().to_string();
-        let profiles = list_profiles().unwrap_or_else(|_| vec![current_profile.clone()]);
-        let entries: Vec<ProfileEntry> = profiles
+        let current_profile = self
+            .active_profile
+            .clone()
+            .unwrap_or_else(|| "all".to_string());
+        let profiles = list_profiles().unwrap_or_else(|_| vec!["default".to_string()]);
+        let mut entries: Vec<ProfileEntry> = profiles
             .iter()
             .map(|name| {
                 let session_count = Storage::new(name)
@@ -596,10 +628,24 @@ impl HomeView {
                 ProfileEntry {
                     name: name.clone(),
                     session_count,
-                    is_active: name == &current_profile,
+                    is_active: self.active_profile.as_deref() == Some(name.as_str()),
                 }
             })
             .collect();
+
+        // In filtered mode, add "all" entry at top
+        if self.active_profile.is_some() {
+            let total: usize = entries.iter().map(|e| e.session_count).sum();
+            entries.insert(
+                0,
+                ProfileEntry {
+                    name: "all".to_string(),
+                    session_count: total,
+                    is_active: false,
+                },
+            );
+        }
+
         self.profile_picker_dialog = Some(ProfilePickerDialog::new(entries, &current_profile));
     }
 
@@ -608,8 +654,29 @@ impl HomeView {
     }
 
     pub fn save(&self) -> anyhow::Result<()> {
-        self.storage
-            .save_with_groups(&self.instances, &self.group_tree)?;
+        // Get current collapsed state from the live group tree
+        let all_groups_with_state = self.group_tree.get_all_groups();
+
+        for (profile_name, storage) in &self.storages {
+            let profile_instances: Vec<Instance> = self
+                .instances
+                .iter()
+                .filter(|i| i.source_profile == *profile_name)
+                .cloned()
+                .collect();
+            // Use groups with their current collapsed state
+            let profile_groups: Vec<Group> = all_groups_with_state
+                .iter()
+                .filter(|g| {
+                    profile_instances.iter().any(|i| {
+                        i.group_path == g.path || i.group_path.starts_with(&format!("{}/", g.path))
+                    })
+                })
+                .cloned()
+                .collect();
+            let profile_tree = GroupTree::new_with_groups(&profile_instances, &profile_groups);
+            storage.save_with_groups(&profile_instances, &profile_tree)?;
+        }
         Ok(())
     }
 
@@ -677,7 +744,8 @@ impl HomeView {
     /// Refresh all config-dependent state from the current profile's config.
     /// Call this after settings are saved to pick up any changes.
     pub fn refresh_from_config(&mut self) {
-        if let Ok(config) = resolve_config(self.storage.profile()) {
+        let profile = self.active_profile.as_deref().unwrap_or("default");
+        if let Ok(config) = resolve_config(profile) {
             // Refresh default terminal mode for sandboxed sessions
             self.default_terminal_mode = match config.sandbox.default_terminal_mode {
                 DefaultTerminalMode::Host => TerminalMode::Host,

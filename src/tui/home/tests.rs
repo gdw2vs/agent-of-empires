@@ -29,9 +29,9 @@ struct TestEnv {
 fn create_test_env_empty() -> TestEnv {
     let temp = TempDir::new().unwrap();
     setup_test_home(&temp);
-    let storage = Storage::new("test").unwrap();
+    let _storage = Storage::new("test").unwrap(); // ensure profile dir exists
     let tools = AvailableTools::with_tools(&["claude"]);
-    let view = HomeView::new(storage, tools).unwrap();
+    let view = HomeView::new(Some("test".to_string()), tools).unwrap();
     TestEnv { _temp: temp, view }
 }
 
@@ -49,7 +49,7 @@ fn create_test_env_with_sessions(count: usize) -> TestEnv {
     storage.save(&instances).unwrap();
 
     let tools = AvailableTools::with_tools(&["claude"]);
-    let view = HomeView::new(storage, tools).unwrap();
+    let view = HomeView::new(Some("test".to_string()), tools).unwrap();
     TestEnv { _temp: temp, view }
 }
 
@@ -73,7 +73,7 @@ fn create_test_env_with_groups() -> TestEnv {
     storage.save(&instances).unwrap();
 
     let tools = AvailableTools::with_tools(&["claude"]);
-    let view = HomeView::new(storage, tools).unwrap();
+    let view = HomeView::new(Some("test".to_string()), tools).unwrap();
     TestEnv { _temp: temp, view }
 }
 
@@ -104,7 +104,7 @@ fn create_test_env_with_mixed_sessions() -> TestEnv {
     storage.save_with_groups(&instances, &group_tree).unwrap();
 
     let tools = AvailableTools::with_tools(&["claude"]);
-    let view = HomeView::new(storage, tools).unwrap();
+    let view = HomeView::new(Some("test".to_string()), tools).unwrap();
     TestEnv { _temp: temp, view }
 }
 
@@ -763,15 +763,18 @@ fn test_uppercase_p_picker_switch_profile() {
     crate::session::create_profile("first").unwrap();
     crate::session::create_profile("second").unwrap();
 
-    let storage = Storage::new("first").unwrap();
+    let _storage = Storage::new("first").unwrap();
     let tools = AvailableTools::with_tools(&["claude"]);
-    let mut view = HomeView::new(storage, tools).unwrap();
+    let mut view = HomeView::new(Some("first".to_string()), tools).unwrap();
 
     // Open picker
     view.handle_key(key(KeyCode::Char('P')));
     assert!(view.profile_picker_dialog.is_some());
 
-    // Navigate down to "second" and select
+    // In filtered mode, "all" is at top, then "first", "second", "test"
+    // Navigate down twice to reach "second"
+    view.handle_key(key(KeyCode::Down));
+    view.handle_key(key(KeyCode::Down));
     view.handle_key(key(KeyCode::Down));
     let action = view.handle_key(key(KeyCode::Enter));
     assert_eq!(action, Some(Action::SwitchProfile("second".to_string())));
@@ -905,7 +908,7 @@ fn create_test_env_with_group_sessions() -> TestEnv {
     storage.save_with_groups(&instances, &group_tree).unwrap();
 
     let tools = AvailableTools::with_tools(&["claude"]);
-    let view = HomeView::new(storage, tools).unwrap();
+    let view = HomeView::new(Some("test".to_string()), tools).unwrap();
     TestEnv { _temp: temp, view }
 }
 
@@ -935,7 +938,7 @@ fn test_group_has_managed_worktrees() {
     storage.save(&[inst1, inst2]).unwrap();
 
     let tools = AvailableTools::with_tools(&["claude"]);
-    let view = HomeView::new(storage, tools).unwrap();
+    let view = HomeView::new(Some("test".to_string()), tools).unwrap();
 
     assert!(view.group_has_managed_worktrees("work", "work/"));
     assert!(!view.group_has_managed_worktrees("other", "other/"));
@@ -968,7 +971,7 @@ fn test_group_has_containers() {
     storage.save(&[inst1, inst2]).unwrap();
 
     let tools = AvailableTools::with_tools(&["claude"]);
-    let view = HomeView::new(storage, tools).unwrap();
+    let view = HomeView::new(Some("test".to_string()), tools).unwrap();
 
     assert!(view.group_has_containers("work", "work/"));
     assert!(!view.group_has_containers("other", "other/"));
@@ -1084,7 +1087,7 @@ fn test_delete_group_with_sessions_respects_worktree_option() {
     storage.save(&[inst1]).unwrap();
 
     let tools = AvailableTools::with_tools(&["claude"]);
-    let mut view = HomeView::new(storage, tools).unwrap();
+    let mut view = HomeView::new(Some("test".to_string()), tools).unwrap();
 
     // Select the work group
     view.cursor = 0;
@@ -1131,7 +1134,7 @@ fn test_delete_group_with_sessions_respects_container_option() {
     storage.save(&[inst1]).unwrap();
 
     let tools = AvailableTools::with_tools(&["claude"]);
-    let mut view = HomeView::new(storage, tools).unwrap();
+    let mut view = HomeView::new(Some("test".to_string()), tools).unwrap();
 
     // Select the work group
     view.cursor = 0;
@@ -1303,7 +1306,13 @@ fn test_group_collapsed_state_saved_to_storage() {
     env.view.handle_key(key(KeyCode::Enter));
 
     // Load fresh from storage to verify persistence
-    let (_, groups) = env.view.storage.load_with_groups().unwrap();
+    let (_, groups) = env
+        .view
+        .storages
+        .get("test")
+        .unwrap()
+        .load_with_groups()
+        .unwrap();
     let fresh_tree = GroupTree::new_with_groups(&env.view.instances, &groups);
     let all_groups = fresh_tree.get_all_groups();
 

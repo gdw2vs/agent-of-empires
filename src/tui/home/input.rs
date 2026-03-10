@@ -38,7 +38,9 @@ impl HomeView {
                         self.confirm_dialog = None;
                         self.settings_close_confirm = false;
                         // Revert theme to saved config (undo any preview)
-                        if let Ok(config) = resolve_config(self.storage.profile()) {
+                        if let Ok(config) =
+                            resolve_config(self.active_profile.as_deref().unwrap_or("default"))
+                        {
                             let theme_name = if config.theme.name.is_empty() {
                                 "phosphor".to_string()
                             } else {
@@ -63,7 +65,9 @@ impl HomeView {
                     // Refresh config-dependent state in case settings changed
                     self.refresh_from_config();
                     // Reload theme from saved config
-                    if let Ok(config) = resolve_config(self.storage.profile()) {
+                    if let Ok(config) =
+                        resolve_config(self.active_profile.as_deref().unwrap_or("default"))
+                    {
                         let theme_name = if config.theme.name.is_empty() {
                             "phosphor".to_string()
                         } else {
@@ -436,7 +440,10 @@ impl HomeView {
                         .iter()
                         .map(|g| g.path.clone())
                         .collect();
-                    let current_profile = self.storage.profile().to_string();
+                    let current_profile = self
+                        .active_profile
+                        .clone()
+                        .unwrap_or_else(|| "default".to_string());
                     let profiles =
                         list_profiles().unwrap_or_else(|_| vec![current_profile.clone()]);
                     self.new_dialog = Some(NewSessionDialog::new(
@@ -466,7 +473,10 @@ impl HomeView {
                     .as_ref()
                     .and_then(|id| self.get_instance(id))
                     .map(|inst| inst.project_path.clone());
-                match SettingsView::new(self.storage.profile(), project_path) {
+                match SettingsView::new(
+                    self.active_profile.as_deref().unwrap_or("default"),
+                    project_path,
+                ) {
                     Ok(view) => self.settings_view = Some(view),
                     Err(e) => {
                         tracing::error!("Failed to open settings: {}", e);
@@ -584,7 +594,10 @@ impl HomeView {
                         if inst.status == Status::Deleting {
                             return None;
                         }
-                        let current_profile = self.storage.profile().to_string();
+                        let current_profile = self
+                            .active_profile
+                            .clone()
+                            .unwrap_or_else(|| "default".to_string());
                         let profiles =
                             list_profiles().unwrap_or_else(|_| vec![current_profile.clone()]);
                         let existing_groups: Vec<String> = self

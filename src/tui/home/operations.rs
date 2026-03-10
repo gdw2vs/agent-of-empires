@@ -10,19 +10,15 @@ use super::HomeView;
 impl HomeView {
     pub(super) fn create_session(&mut self, data: NewSessionData) -> anyhow::Result<String> {
         let target_profile = data.profile.clone();
-        let is_cross_profile = target_profile != self.storage.profile();
 
-        // For cross-profile creation, use the target profile's instances for title dedup
-        let target_instances = if is_cross_profile {
-            Storage::new(&target_profile)?.load()?
-        } else {
-            Vec::new()
-        };
-        let existing_titles: Vec<&str> = if is_cross_profile {
-            target_instances.iter().map(|i| i.title.as_str()).collect()
-        } else {
-            self.instances.iter().map(|i| i.title.as_str()).collect()
-        };
+        // In unified mode, all instances are loaded, so use them for title dedup.
+        // For the target profile, filter to that profile's instances.
+        let existing_titles: Vec<&str> = self
+            .instances
+            .iter()
+            .filter(|i| i.source_profile == target_profile)
+            .map(|i| i.title.as_str())
+            .collect();
 
         let params = InstanceParams {
             title: data.title,
@@ -40,27 +36,22 @@ impl HomeView {
         };
 
         let build_result = builder::build_instance(params, &existing_titles, &target_profile)?;
-        let instance = build_result.instance;
+        let mut instance = build_result.instance;
+        instance.source_profile = target_profile.clone();
         let session_id = instance.id.clone();
 
-        if is_cross_profile {
-            // Save to target profile's storage
-            let target_storage = Storage::new(&target_profile)?;
-            let (mut target_instances, target_groups) = target_storage.load_with_groups()?;
-            target_instances.push(instance.clone());
-            let mut target_tree = GroupTree::new_with_groups(&target_instances, &target_groups);
-            if !instance.group_path.is_empty() {
-                target_tree.create_group(&instance.group_path);
-            }
-            target_storage.save_with_groups(&target_instances, &target_tree)?;
-        } else {
-            self.instances.push(instance.clone());
-            self.group_tree = GroupTree::new_with_groups(&self.instances, &self.groups);
-            if !instance.group_path.is_empty() {
-                self.group_tree.create_group(&instance.group_path);
-            }
-            self.save()?;
+        // Ensure target profile storage exists
+        if !self.storages.contains_key(&target_profile) {
+            self.storages
+                .insert(target_profile.clone(), Storage::new(&target_profile)?);
         }
+
+        self.instances.push(instance.clone());
+        self.group_tree = GroupTree::new_with_groups(&self.instances, &self.groups);
+        if !instance.group_path.is_empty() {
+            self.group_tree.create_group(&instance.group_path);
+        }
+        self.save()?;
 
         self.reload()?;
         Ok(session_id)
@@ -202,7 +193,14 @@ impl HomeView {
 
             // Handle profile change (move session to different profile)
             if let Some(target_profile) = new_profile {
-                let current_profile = self.storage.profile();
+                let current_profile = self
+                    .get_instance(&id)
+                    .map(|i| i.source_profile.clone())
+                    .unwrap_or_else(|| {
+                        self.active_profile
+                            .clone()
+                            .unwrap_or_else(|| "default".to_string())
+                    });
                 if target_profile != current_profile {
                     // Validate target profile exists
                     let profiles = list_profiles()?;
@@ -238,26 +236,25 @@ impl HomeView {
                         }
                     }
 
-                    // Remove from current profile
-                    self.instances.retain(|i| i.id != id);
-                    self.group_tree = GroupTree::new_with_groups(&self.instances, &self.groups);
-                    self.save()?;
-
-                    // Add to target profile
-                    let target_storage = Storage::new(target_profile)?;
-                    let (mut target_instances, target_groups) =
-                        target_storage.load_with_groups()?;
-                    target_instances.push(instance);
-                    let mut target_tree =
-                        GroupTree::new_with_groups(&target_instances, &target_groups);
-                    if !effective_group.is_empty() {
-                        target_tree.create_group(&effective_group);
+                    // Ensure target profile storage exists
+                    if !self.storages.contains_key(target_profile) {
+                        self.storages
+                            .insert(target_profile.to_string(), Storage::new(target_profile)?);
                     }
-                    target_storage.save_with_groups(&target_instances, &target_tree)?;
 
-                    // Clear selection since session is no longer in this profile
-                    self.selected_session = None;
+                    // Update source_profile and save (handles moving between profiles)
+                    instance.source_profile = target_profile.to_string();
+                    self.mutate_instance(&id, |inst| {
+                        inst.title = instance.title.clone();
+                        inst.group_path = instance.group_path.clone();
+                        inst.source_profile = instance.source_profile.clone();
+                    });
 
+                    self.group_tree = GroupTree::new_with_groups(&self.instances, &self.groups);
+                    if !effective_group.is_empty() {
+                        self.group_tree.create_group(&effective_group);
+                    }
+                    self.save()?;
                     self.reload()?;
                     return Ok(());
                 }
