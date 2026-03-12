@@ -22,9 +22,9 @@ use crate::tmux::AvailableTools;
 use super::creation_poller::{CreationPoller, CreationRequest};
 use super::deletion_poller::DeletionPoller;
 use super::dialogs::{
-    ChangelogDialog, ConfirmDialog, GroupDeleteOptionsDialog, HookTrustDialog, InfoDialog,
-    NewSessionData, NewSessionDialog, ProfilePickerDialog, RenameDialog, UnifiedDeleteDialog,
-    WelcomeDialog,
+    ChangelogDialog, ConfirmDialog, GroupDeleteOptionsDialog, HookTrustDialog, HooksInstallDialog,
+    InfoDialog, NewSessionData, NewSessionDialog, ProfilePickerDialog, RenameDialog,
+    UnifiedDeleteDialog, WelcomeDialog,
 };
 use super::diff::DiffView;
 use super::settings::SettingsView;
@@ -121,6 +121,9 @@ pub struct HomeView {
     pub(super) hook_trust_dialog: Option<HookTrustDialog>,
     /// Session data pending hook trust approval
     pub(super) pending_hook_trust_data: Option<NewSessionData>,
+    pub(super) hooks_install_dialog: Option<HooksInstallDialog>,
+    /// Session data pending agent hooks acknowledgment
+    pub(super) pending_hooks_install_data: Option<NewSessionData>,
     pub(super) welcome_dialog: Option<WelcomeDialog>,
     pub(super) changelog_dialog: Option<ChangelogDialog>,
     pub(super) info_dialog: Option<InfoDialog>,
@@ -231,30 +234,14 @@ impl HomeView {
             .and_then(|c| c.app_state.sort_order)
             .unwrap_or_default();
 
-        let collapsed_profiles = HashSet::new();
-        let flat_items = if active_profile.is_none() {
-            flatten_tree_all_profiles(
-                &all_instances,
-                &group_trees,
-                sort_order,
-                &collapsed_profiles,
-            )
-        } else {
-            let tree = active_profile.as_ref().and_then(|p| group_trees.get(p));
-            match tree {
-                Some(t) => flatten_tree(t, &all_instances, sort_order),
-                None => Vec::new(),
-            }
-        };
-
         let mut view = Self {
             storages,
             active_profile,
-            collapsed_profiles,
+            collapsed_profiles: HashSet::new(),
             instances: all_instances,
             instance_map,
             group_trees,
-            flat_items,
+            flat_items: Vec::new(),
             cursor: 0,
             selected_session: None,
             selected_group: None,
@@ -269,6 +256,8 @@ impl HomeView {
             rename_dialog: None,
             hook_trust_dialog: None,
             pending_hook_trust_data: None,
+            hooks_install_dialog: None,
+            pending_hooks_install_data: None,
             welcome_dialog: None,
             changelog_dialog: None,
             info_dialog: None,
@@ -300,6 +289,7 @@ impl HomeView {
                 .unwrap_or(35),
         };
 
+        view.flat_items = view.build_flat_items();
         view.update_selected();
         Ok(view)
     }
@@ -594,6 +584,7 @@ impl HomeView {
             || self.group_delete_options_dialog.is_some()
             || self.rename_dialog.is_some()
             || self.hook_trust_dialog.is_some()
+            || self.hooks_install_dialog.is_some()
             || self.welcome_dialog.is_some()
             || self.changelog_dialog.is_some()
             || self.info_dialog.is_some()
@@ -668,6 +659,10 @@ impl HomeView {
     /// Pass `None` for all-profiles mode, or `Some(name)` to filter to one profile.
     pub fn switch_profile(&mut self, new_profile: Option<String>) -> anyhow::Result<()> {
         self.active_profile = new_profile;
+        // Clear selection before reload so stale session/group refs don't linger
+        self.selected_session = None;
+        self.selected_group = None;
+        self.selected_group_profile = None;
         self.reload()?;
         self.refresh_from_config();
         // Invalidate preview caches since the visible sessions changed
