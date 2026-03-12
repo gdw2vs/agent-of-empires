@@ -67,15 +67,15 @@ impl Default for PreviewCache {
 
 pub(super) const INDENTS: [&str; 10] = [
     "",
+    " ",
     "  ",
+    "   ",
     "    ",
+    "     ",
     "      ",
+    "       ",
     "        ",
-    "          ",
-    "            ",
-    "              ",
-    "                ",
-    "                  ",
+    "         ",
 ];
 
 pub(super) fn get_indent(depth: usize) -> &'static str {
