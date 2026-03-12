@@ -633,9 +633,15 @@ impl HomeView {
 
     pub(super) fn build_flat_items(&self) -> Vec<Item> {
         if let Some(profile) = &self.active_profile {
-            // Filtered to a single profile
+            // Filtered to a single profile -- only include that profile's instances
+            let filtered: Vec<Instance> = self
+                .instances
+                .iter()
+                .filter(|i| i.source_profile == *profile)
+                .cloned()
+                .collect();
             match self.group_trees.get(profile) {
-                Some(tree) => flatten_tree(tree, &self.instances, self.sort_order),
+                Some(tree) => flatten_tree(tree, &filtered, self.sort_order),
                 None => Vec::new(),
             }
         } else if self.storages.len() <= 1 {
