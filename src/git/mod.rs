@@ -122,7 +122,7 @@ impl GitWorktree {
         let git_or_bare_dir = worktrees_dir.parent()?;
         let parent_dir = git_or_bare_dir.parent()?;
         if git_or_bare_dir.file_name() == Some(OsStr::new(".git"))
-            || parent_dir.join(".git").exists()
+            || parent_dir.join(".git").is_file()
         {
             return Some(parent_dir.to_path_buf());
         }
@@ -1298,6 +1298,29 @@ mod tests {
             result.unwrap().canonicalize().unwrap(),
             bare_path.canonicalize().unwrap(),
             "find_main_repo should return the bare repo root itself, not its parent"
+        );
+    }
+
+    #[test]
+    fn test_find_main_repo_from_worktree_with_spurious_parent_git_dir() {
+        let Some((_dir, bare_path)) = setup_bare_repo_whose_parent_has_spurious_git_dir() else {
+            return;
+        };
+
+        // find_main_repo from a linked worktree inside the bare repo should resolve
+        // back to the bare repo, not to the parent with the spurious .git/ dir.
+        let worktree_path = bare_path.join("main");
+        let result = GitWorktree::find_main_repo(&worktree_path);
+        assert!(
+            result.is_ok(),
+            "find_main_repo from worktree should succeed, got: {:?}",
+            result.err()
+        );
+        let resolved = result.unwrap().canonicalize().unwrap();
+        let expected = bare_path.canonicalize().unwrap();
+        assert_eq!(
+            resolved, expected,
+            "should resolve to bare repo, not parent"
         );
     }
 
