@@ -755,7 +755,7 @@ impl HomeView {
                     }
                 }
             }
-            KeyCode::Char('r') if !key.modifiers.contains(KeyModifiers::SHIFT) => {
+            KeyCode::Char('r') => {
                 if let Some(id) = &self.selected_session {
                     if let Some(inst) = self.get_instance(id) {
                         if inst.status == Status::Deleting {
