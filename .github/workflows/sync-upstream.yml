@@ -1,0 +1,48 @@
+name: Sync from Upstream
+
+# Keeps this fork's main branch in sync with njbrake/agent-of-empires.
+# Rebases any fork-specific commits (e.g. cachix-push.yml, this file) on top
+# of upstream so upstream changes are always incorporated without merge commits.
+#
+# Other branches are unaffected -- only main is synced.
+
+on:
+  schedule:
+    - cron: '0 6 * * *' # daily at 6am UTC
+  workflow_dispatch:
+
+jobs:
+  sync:
+    name: Rebase fork/main onto upstream
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+          fetch-depth: 0
+          # GITHUB_TOKEN is sufficient here -- the push lands on main but the
+          # sync commit itself doesn't need to trigger further workflows.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add upstream remote
+        run: git remote add upstream https://github.com/njbrake/agent-of-empires.git
+
+      - name: Fetch upstream
+        run: git fetch upstream main
+
+      - name: Rebase onto upstream
+        run: |
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "Fork is already up to date with upstream."
+            exit 0
+          fi
+
+          # Rebase any fork-specific commits on top of upstream main.
+          # This keeps fork-only changes (e.g. cachix-push.yml, sync-upstream.yml)
+          # without creating merge commits, while incorporating all upstream changes.
+          git rebase upstream/main
+          git push origin main --force-with-lease
+          echo "Rebased fork/main onto upstream at $(git rev-parse --short HEAD)"

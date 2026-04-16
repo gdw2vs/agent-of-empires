@@ -4,10 +4,10 @@ name: Push to Cachix
 # and pushes the results to the Cachix binary cache so users can install
 # without compiling. Runs a matrix so both systems build in parallel.
 #
-# Requires two repository secrets:
+# Requires two repository secrets set in the fork's Settings > Secrets:
 #   CACHIX_AUTH_TOKEN  - from cachix.org (Settings > Auth Tokens)
-#   CACHIX_CACHE_NAME  - your cache name (e.g. "agent-of-empires")
-
+#   CACHIX_CACHE_NAME  - your cache name (e.g. "gdw2vs")
+#
 on:
   push:
     branches: [main]
