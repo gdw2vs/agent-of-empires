@@ -82,5 +82,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add flake.nix
+          # flake.nix may be unchanged if the computed hash matches what was
+          # already there (lockfile changed but deps didn't). Skip gracefully.
+          if git diff --cached --quiet; then
+            echo "Hash unchanged, nothing to commit."
+            exit 0
+          fi
           git commit -m "chore: update Nix npmDepsHash for web dependencies"
           git push
