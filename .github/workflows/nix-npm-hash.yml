@@ -5,10 +5,13 @@ name: Update Nix npm Hash
 #
 # This keeps flake.nix in sync automatically so `nix build .#aoe-with-web`
 # never fails with a hash mismatch after a dependency update.
+#
+# TEST BRANCH: test/nix-hash-workflow is listed below for workflow testing
+# only — remove it before merging to main.
 
 on:
   push:
-    branches: [main]
+    branches: [main, test/nix-hash-workflow]
     paths:
       - web/package-lock.json
 
