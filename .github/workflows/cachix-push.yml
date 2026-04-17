@@ -23,8 +23,10 @@ on:
       # npmDepsHash in flake.nix. Building here before that hash is
       # committed races and fails with ENOTCACHED. The workflow_run
       # trigger below chains the cachix build after the hash update.
+  # Also runs after the daily upstream sync so any new upstream release
+  # is built and pushed to Cachix automatically.
   workflow_run:
-    workflows: ["Update Nix npm Hash"]
+    workflows: ["Update Nix npm Hash", "Sync from Upstream"]
     branches: [main]
     types: [completed]
   workflow_dispatch:
