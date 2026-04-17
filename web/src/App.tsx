@@ -309,6 +309,7 @@ function AppContent({ loginRequired, onLogout }: { loginRequired: boolean; onLog
           sessions={sessions}
           onSelectSession={handleSelectSession}
           onNewSession={handleNewSession}
+          onCreateSession={handleCreateSession}
         />
       );
     }
