@@ -303,6 +303,37 @@ export async function createSession(
   }
 }
 
+// --- Clone ---
+
+export async function cloneRepo(
+  url: string,
+  opts?: { destination?: string; shallow?: boolean },
+): Promise<{ ok: boolean; path?: string; error?: string }> {
+  try {
+    const body: Record<string, unknown> = { url };
+    if (opts?.destination) body.destination = opts.destination;
+    if (opts?.shallow) body.shallow = true;
+    const res = await fetch("/api/git/clone", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: data.message || `Clone failed (${res.status})`,
+      };
+    }
+    return { ok: true, path: data.path };
+  } catch (e) {
+    return {
+      ok: false,
+      error: `Network error: ${e instanceof Error ? e.message : "connection failed"}`,
+    };
+  }
+}
+
 // --- Login ---
 
 export async function loginStatus(): Promise<{
