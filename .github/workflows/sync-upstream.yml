@@ -17,16 +17,17 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      workflows: write
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           ref: main
           fetch-depth: 0
-          # GITHUB_TOKEN is sufficient here -- the push lands on main but the
-          # sync commit itself doesn't need to trigger further workflows.
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # A PAT with the `workflow` scope is required to push commits that
+          # modify files under .github/workflows/. The default GITHUB_TOKEN
+          # cannot be granted this permission. Falls back to GITHUB_TOKEN if
+          # the secret is not set (push will fail for workflow-file changes).
+          token: ${{ secrets.SYNC_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Configure git identity
         run: |
