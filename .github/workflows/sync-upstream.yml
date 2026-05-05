@@ -1,10 +1,11 @@
 name: Sync from Upstream
 
 # Keeps this fork's main branch in sync with njbrake/agent-of-empires.
-# Rebases any fork-specific commits (e.g. cachix-push.yml, this file) on top
-# of upstream so upstream changes are always incorporated without merge commits.
+# Uses GitHub's merge-upstream API, which works with the default GITHUB_TOKEN
+# (no PAT needed) and handles workflow file changes that git push cannot.
 #
-# Other branches are unaffected -- only main is synced.
+# Fork-only commits (e.g. cachix-push.yml, this file) are preserved via merge.
+# Other branches are unaffected.
 
 on:
   schedule:
@@ -13,43 +14,23 @@ on:
 
 jobs:
   sync:
-    name: Rebase fork/main onto upstream
+    name: Sync fork with upstream
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          ref: main
-          fetch-depth: 0
-          # A PAT with the `workflow` scope is required to push commits that
-          # modify files under .github/workflows/. The default GITHUB_TOKEN
-          # cannot be granted this permission. Falls back to GITHUB_TOKEN if
-          # the secret is not set (push will fail for workflow-file changes).
-          token: ${{ secrets.SYNC_PAT || secrets.GITHUB_TOKEN }}
-
-      - name: Configure git identity
+      - name: Merge upstream into fork
         run: |
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git config user.name "github-actions[bot]"
+          response=$(gh api repos/${{ github.repository }}/merge-upstream \
+            -f branch=main 2>&1) || true
+          echo "$response"
 
-      - name: Add upstream remote
-        run: git remote add upstream https://github.com/njbrake/agent-of-empires.git
-
-      - name: Fetch upstream
-        run: git fetch upstream main
-
-      - name: Rebase onto upstream
-        run: |
-          if git merge-base --is-ancestor upstream/main HEAD; then
-            echo "Fork is already up to date with upstream."
-            exit 0
+          # The API returns merge_type: "none" when already up to date,
+          # "fast-forward" or "merge" on success.
+          if echo "$response" | grep -q '"merge_type"'; then
+            echo "Sync complete."
+          else
+            echo "::error::Failed to sync from upstream"
+            exit 1
           fi
-
-          # Rebase any fork-specific commits on top of upstream main.
-          # This keeps fork-only changes (e.g. cachix-push.yml, sync-upstream.yml)
-          # without creating merge commits, while incorporating all upstream changes.
-          git rebase upstream/main
-          git push origin main --force-with-lease
-          echo "Rebased fork/main onto upstream at $(git rev-parse --short HEAD)"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
